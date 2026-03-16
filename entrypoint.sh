@@ -5,4 +5,4 @@ echo "Running database migrations..."
 alembic upgrade head
 
 echo "Starting Flask application..."
-exec gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 "app:create_app()"
+exec flask --app "app:create_app()" run --host 0.0.0.0 --port 5000 --reload

@@ -17,6 +17,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-}
     volumes:
+      - .:/app
       - storage:/data
     depends_on:
       db:

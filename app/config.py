@@ -4,7 +4,7 @@ import os
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-prod")
     SECURITY_PASSWORD_SALT = os.environ.get("SECURITY_PASSWORD_SALT", "dev-salt")
-    SECURITY_TOKEN_AUTHENTICATION_HEADER = "Authorization"
+    SECURITY_TOKEN_AUTHENTICATION_HEADER = "Authentication-Token"
     SECURITY_TOKEN_AUTHENTICATION_KEY = "auth_token"
     WTF_CSRF_ENABLED = False
     SECURITY_CSRF_PROTECT_MECHANISMS = []

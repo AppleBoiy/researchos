@@ -12,29 +12,26 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.types import TypeDecorator, CHAR
+from sqlalchemy.types import TypeDecorator
 import sqlalchemy as sa
+
+from flask_security import UserMixin
 
 from app.extensions import db
 
 
-# Cross-DB UUID type: uses native UUID on PostgreSQL, CHAR(36) on SQLite
+# Cross-DB UUID type: stored as VARCHAR(36) on both PostgreSQL and SQLite
 class GUID(TypeDecorator):
-    """Platform-independent GUID type."""
-    impl = CHAR
+    """Platform-independent GUID type stored as VARCHAR(36)."""
+    impl = String
     cache_ok = True
 
     def load_dialect_impl(self, dialect):
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(PG_UUID())
-        return dialect.type_descriptor(CHAR(36))
+        return dialect.type_descriptor(String(36))
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return value
-        if dialect.name == "postgresql":
-            return str(value)
         if not isinstance(value, uuid.UUID):
             return str(uuid.UUID(str(value)))
         return str(value)
@@ -59,7 +56,7 @@ TransferStatusEnum = Enum(
 )
 
 
-class User(db.Model):
+class User(UserMixin, db.Model):
     __tablename__ = "user"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)

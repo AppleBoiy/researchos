@@ -20,7 +20,7 @@ def upgrade() -> None:
     # role table
     op.create_table(
         "role",
-        sa.Column("id", sa.CHAR(36), nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
         sa.Column("name", sa.String(80), nullable=True),
         sa.Column("description", sa.String(255), nullable=True),
         sa.PrimaryKeyConstraint("id"),
@@ -30,7 +30,7 @@ def upgrade() -> None:
     # user table
     op.create_table(
         "user",
-        sa.Column("id", sa.CHAR(36), nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
         sa.Column("email", sa.String(255), nullable=False),
         sa.Column("password", sa.String(255), nullable=False),
         sa.Column("active", sa.Boolean(), nullable=True),
@@ -44,8 +44,8 @@ def upgrade() -> None:
     # roles_users association table
     op.create_table(
         "roles_users",
-        sa.Column("user_id", sa.CHAR(36), nullable=True),
-        sa.Column("role_id", sa.CHAR(36), nullable=True),
+        sa.Column("user_id", sa.String(36), nullable=True),
+        sa.Column("role_id", sa.String(36), nullable=True),
         sa.ForeignKeyConstraint(["role_id"], ["role.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"]),
     )
@@ -53,8 +53,8 @@ def upgrade() -> None:
     # document table
     op.create_table(
         "document",
-        sa.Column("id", sa.CHAR(36), nullable=False),
-        sa.Column("user_id", sa.CHAR(36), nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
         sa.Column("title", sa.String(500), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("file_path", sa.String(1000), nullable=True),
@@ -74,7 +74,7 @@ def upgrade() -> None:
     # tag table
     op.create_table(
         "tag",
-        sa.Column("id", sa.CHAR(36), nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
@@ -83,8 +83,8 @@ def upgrade() -> None:
     # document_tag table
     op.create_table(
         "document_tag",
-        sa.Column("document_id", sa.CHAR(36), nullable=False),
-        sa.Column("tag_id", sa.CHAR(36), nullable=False),
+        sa.Column("document_id", sa.String(36), nullable=False),
+        sa.Column("tag_id", sa.String(36), nullable=False),
         sa.Column("accepted", sa.Boolean(), nullable=False),
         sa.ForeignKeyConstraint(["document_id"], ["document.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["tag_id"], ["tag.id"], ondelete="CASCADE"),
@@ -94,8 +94,8 @@ def upgrade() -> None:
     # upload_chunk table
     op.create_table(
         "upload_chunk",
-        sa.Column("id", sa.CHAR(36), nullable=False),
-        sa.Column("document_id", sa.CHAR(36), nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("document_id", sa.String(36), nullable=False),
         sa.Column("chunk_index", sa.Integer(), nullable=False),
         sa.Column("total_chunks", sa.Integer(), nullable=False),
         sa.Column("temp_path", sa.String(1000), nullable=False),
@@ -107,8 +107,8 @@ def upgrade() -> None:
     # transfer_job table
     op.create_table(
         "transfer_job",
-        sa.Column("id", sa.CHAR(36), nullable=False),
-        sa.Column("document_id", sa.CHAR(36), nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("document_id", sa.String(36), nullable=False),
         sa.Column(
             "source_type",
             sa.Enum("ssh", "s3", "local", name="transfer_type_enum"),

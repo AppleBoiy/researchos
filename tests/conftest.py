@@ -81,7 +81,8 @@ def auth_headers(client, db, app):
             data = response.get_json()
             token = data.get("token") or data.get("access_token") or data.get("auth_token")
             if token:
-                return {"Authorization": f"Bearer {token}"}
+                # Flask-Security token auth uses Authentication-Token header
+                return {"Authentication-Token": token}
 
         # Fallback: return empty headers (auth not yet implemented)
         return {}
