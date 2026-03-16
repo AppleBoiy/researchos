@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import uuid
 
@@ -229,8 +230,33 @@ class DocumentDetail(Resource):
         responses={204: "Deleted", 401: "Unauthorized", 404: "Not found"},
     )
     def delete(self, doc_id):
-        """Delete a document — implemented in task 4.4."""
-        pass
+        """Delete a document and all associated records and file blob."""
+        try:
+            doc_uuid = uuid.UUID(doc_id)
+        except (ValueError, AttributeError):
+            return _error("not_found", "Document not found.", status=404)
+
+        doc = Document.query.filter_by(id=doc_uuid, user_id=current_user.id).first()
+        if doc is None:
+            return _error("not_found", "Document not found.", status=404)
+
+        # Delete file blob from storage
+        file_path = doc.file_path
+        if file_path and os.path.isfile(file_path):
+            os.remove(file_path)
+
+        # Delete chunk files from storage
+        storage_path = current_app.config.get("STORAGE_PATH", "/data")
+        chunks_dir = os.path.join(storage_path, "chunks", str(doc_uuid))
+        if os.path.isdir(chunks_dir):
+            import shutil
+            shutil.rmtree(chunks_dir)
+
+        # Delete DB record (cascades to DocumentTag and UploadChunk via ORM)
+        db.session.delete(doc)
+        db.session.commit()
+
+        return "", 204
 
 
 @documents_ns.route("/<doc_id>/download")
@@ -239,11 +265,38 @@ class DocumentDownload(Resource):
     @documents_ns.doc(
         security="apikey",
         params={"doc_id": "Document UUID"},
-        responses={200: "File stream", 401: "Unauthorized", 404: "Not found"},
+        responses={
+            200: "Binary file download",
+            401: "Unauthorized",
+            404: "Not found",
+        },
+        produces=["application/pdf", "application/x-latex", "application/octet-stream"],
     )
     def get(self, doc_id):
-        """Download the file blob for a document — implemented in task 4.1."""
-        pass
+        """Download the file blob for a document owned by the authenticated user."""
+        try:
+            doc_uuid = uuid.UUID(doc_id)
+        except (ValueError, AttributeError):
+            return _error("not_found", "Document not found.", status=404)
+
+        doc = Document.query.filter_by(id=doc_uuid, user_id=current_user.id).first()
+        if doc is None:
+            return _error("not_found", "Document not found.", status=404)
+
+        file_path = doc.file_path
+        if not file_path or not os.path.isfile(file_path):
+            return _error("not_found", "File not found on storage.", status=404)
+
+        mime_map = {
+            "pdf": "application/pdf",
+            "latex": "application/x-latex",
+            "dataset": "application/octet-stream",
+            "other": "application/octet-stream",
+        }
+        mimetype = mime_map.get(doc.file_type, "application/octet-stream")
+
+        return send_file(file_path, mimetype=mimetype, as_attachment=True,
+                         download_name=f"{doc_id}")
 
 
 @documents_ns.route("/<doc_id>/status")

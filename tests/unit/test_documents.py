@@ -379,3 +379,211 @@ class TestGetDocumentById:
         assert len(data["tags"]) == 1
         assert data["tags"][0]["name"] == "nlp"
         assert data["tags"][0]["accepted"] is True
+
+
+# ---------------------------------------------------------------------------
+# GET /documents/<id>/download — file streaming (Task 4.1)
+# ---------------------------------------------------------------------------
+
+def _download_document(client, headers, doc_id):
+    merged_headers = {"Accept": "application/json", **(headers or {})}
+    return client.get(f"/documents/{doc_id}/download", headers=merged_headers)
+
+
+class TestDownloadDocument:
+    def test_streams_file_with_correct_content_type(self, client, auth_headers, tmp_path, app):
+        """Req 4.1: streams file blob with correct Content-Type."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        content = b"%PDF-1.4 test content"
+        resp = _post_document(client, auth_headers, file_content=content, file_type="pdf")
+        assert resp.status_code == 201
+        doc_id = resp.get_json()["id"]
+
+        dl = _download_document(client, auth_headers, doc_id)
+        assert dl.status_code == 200
+        assert dl.data == content
+        assert "application/pdf" in dl.content_type
+
+    def test_streams_latex_with_correct_content_type(self, client, auth_headers, tmp_path, app):
+        """Req 4.1: latex file_type returns application/x-latex."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        content = b"\\documentclass{article}"
+        resp = _post_document(client, auth_headers, file_content=content, file_type="latex")
+        assert resp.status_code == 201
+        doc_id = resp.get_json()["id"]
+
+        dl = _download_document(client, auth_headers, doc_id)
+        assert dl.status_code == 200
+        assert dl.data == content
+        assert "application/x-latex" in dl.content_type
+
+    def test_returns_404_when_file_missing_from_storage(self, client, auth_headers, tmp_path, app, db):
+        """Req 4.2: 404 when file is not present on storage volume."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        # Create document record pointing to a non-existent file
+        with app.app_context():
+            from app.models import User, Document as Doc
+            user = User.query.filter_by(email="testuser@example.com").first()
+            doc_id = uuid.uuid4()
+            doc = Doc(
+                id=doc_id,
+                user_id=user.id,
+                title="Missing File",
+                file_type="pdf",
+                file_size=0,
+                file_path="/nonexistent/path/to/file",
+            )
+            db.session.add(doc)
+            db.session.commit()
+
+        dl = _download_document(client, auth_headers, str(doc_id))
+        assert dl.status_code == 404
+
+    def test_returns_404_for_other_users_document(self, client, auth_headers, tmp_path, app, db):
+        """Req 4.3: 404 when document belongs to a different user."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        with app.app_context():
+            from app.models import Document as Doc
+            other_doc_id = uuid.uuid4()
+            other_doc = Doc(
+                id=other_doc_id,
+                user_id=uuid.uuid4(),
+                title="Other User Doc",
+                file_type="pdf",
+                file_size=5,
+                file_path=str(tmp_path / "files" / str(other_doc_id)),
+            )
+            db.session.add(other_doc)
+            db.session.commit()
+
+        dl = _download_document(client, auth_headers, str(other_doc_id))
+        assert dl.status_code == 404
+
+    def test_returns_404_for_nonexistent_document(self, client, auth_headers, tmp_path, app):
+        """404 for a completely unknown document ID."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        dl = _download_document(client, auth_headers, str(uuid.uuid4()))
+        assert dl.status_code == 404
+
+    def test_unauthenticated_returns_401(self, client, tmp_path, app):
+        """Unauthenticated request returns 401."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        dl = _download_document(client, {}, str(uuid.uuid4()))
+        assert dl.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /documents/<id> — document deletion (Task 4.4)
+# ---------------------------------------------------------------------------
+
+def _delete_document(client, headers, doc_id):
+    merged_headers = {"Accept": "application/json", **(headers or {})}
+    return client.delete(f"/documents/{doc_id}", headers=merged_headers)
+
+
+class TestDeleteDocument:
+    def test_delete_returns_204(self, client, auth_headers, tmp_path, app):
+        """Req 5.3: successful delete returns 204 No Content."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _post_document(client, auth_headers)
+        doc_id = resp.get_json()["id"]
+
+        del_resp = _delete_document(client, auth_headers, doc_id)
+        assert del_resp.status_code == 204
+
+    def test_delete_removes_document_record(self, client, auth_headers, tmp_path, app):
+        """Req 5.1: Document record is removed from DB."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _post_document(client, auth_headers)
+        doc_id = resp.get_json()["id"]
+
+        _delete_document(client, auth_headers, doc_id)
+
+        with app.app_context():
+            from app.models import Document
+            assert Document.query.filter_by(id=uuid.UUID(doc_id)).first() is None
+
+    def test_delete_removes_file_blob(self, client, auth_headers, tmp_path, app):
+        """Req 5.1: file blob is removed from storage."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _post_document(client, auth_headers, file_content=b"blob data")
+        doc_id = resp.get_json()["id"]
+        file_path = tmp_path / "files" / doc_id
+        assert file_path.exists()
+
+        _delete_document(client, auth_headers, doc_id)
+        assert not file_path.exists()
+
+    def test_delete_removes_document_tags(self, client, auth_headers, tmp_path, app, db):
+        """Req 5.1: associated DocumentTag records are removed."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _post_document(client, auth_headers)
+        doc_id = resp.get_json()["id"]
+
+        with app.app_context():
+            from app.models import Tag, DocumentTag
+            tag = Tag(name="to-delete")
+            db.session.add(tag)
+            db.session.flush()
+            dt = DocumentTag(document_id=uuid.UUID(doc_id), tag_id=tag.id, accepted=False)
+            db.session.add(dt)
+            db.session.commit()
+
+        _delete_document(client, auth_headers, doc_id)
+
+        with app.app_context():
+            from app.models import DocumentTag
+            assert DocumentTag.query.filter_by(document_id=uuid.UUID(doc_id)).count() == 0
+
+    def test_delete_removes_upload_chunks(self, client, auth_headers, tmp_path, app, db):
+        """Req 5.1: associated UploadChunk records are removed."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _post_document(client, auth_headers)
+        doc_id = resp.get_json()["id"]
+
+        with app.app_context():
+            from app.models import UploadChunk
+            chunk = UploadChunk(
+                document_id=uuid.UUID(doc_id),
+                chunk_index=0,
+                total_chunks=1,
+                temp_path="/tmp/chunk0",
+            )
+            db.session.add(chunk)
+            db.session.commit()
+
+        _delete_document(client, auth_headers, doc_id)
+
+        with app.app_context():
+            from app.models import UploadChunk
+            assert UploadChunk.query.filter_by(document_id=uuid.UUID(doc_id)).count() == 0
+
+    def test_delete_returns_404_for_other_users_document(self, client, auth_headers, tmp_path, app, db):
+        """Req 5.2: 404 when document belongs to a different user."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        with app.app_context():
+            from app.models import Document
+            other_doc_id = uuid.uuid4()
+            other_doc = Document(
+                id=other_doc_id,
+                user_id=uuid.uuid4(),
+                title="Other User Doc",
+                file_type="pdf",
+                file_size=0,
+            )
+            db.session.add(other_doc)
+            db.session.commit()
+
+        resp = _delete_document(client, auth_headers, str(other_doc_id))
+        assert resp.status_code == 404
+
+    def test_delete_returns_404_for_nonexistent_document(self, client, auth_headers, tmp_path, app):
+        """Req 5.2: 404 for unknown document ID."""
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _delete_document(client, auth_headers, str(uuid.uuid4()))
+        assert resp.status_code == 404
+
+    def test_delete_unauthenticated_returns_401(self, client, tmp_path, app):
+        app.config["STORAGE_PATH"] = str(tmp_path)
+        resp = _delete_document(client, {}, str(uuid.uuid4()))
+        assert resp.status_code == 401
